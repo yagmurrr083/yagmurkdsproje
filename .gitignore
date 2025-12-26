@@ -1,0 +1,24 @@
+# Nuxt
+.nuxt
+.output
+.env
+*.log
+
+# Node
+node_modules
+dist
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy cloned repos and failed init (DO NOT PUSH TO GITHUB)
+yagmurkds-legacy/
+teacher-backend/
+frontend/
