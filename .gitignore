@@ -18,7 +18,8 @@ dist
 .DS_Store
 Thumbs.db
 
-# Legacy cloned repos and failed init (DO NOT PUSH TO GITHUB)
-yagmurkds-legacy/
-teacher-backend/
+# Express reference (not deployed to Vercel)
+_express_reference/
+
+# Failed init folders (DO NOT PUSH TO GITHUB)
 frontend/

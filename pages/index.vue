@@ -204,13 +204,8 @@ import { Chart, registerables } from 'chart.js';
 // Register Chart.js components
 Chart.register(...registerables);
 
-// Runtime config for API base URL
-const config = useRuntimeConfig();
-
-// Fetch analysis data from backend
-const { data: analysisData, pending, error } = await useFetch('/api/analiz', {
-  baseURL: config.public.apiBase
-});
+// Fetch analysis data from Nitro API route (Vercel same-origin)
+const { data: analysisData, pending, error } = await useFetch('/api/analiz');
 
 // Chart refs
 const pieChartRef = ref(null);

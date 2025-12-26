@@ -1,106 +1,75 @@
-# KDS Analysis Dashboard
+# KDS Analysis Dashboard - Vercel Deployment
 
-> **Decision-grade sustainability analytics dashboard built with Nuxt 3 + Express.js**
+> **Vercel-native Nuxt 3 application with Nitro API routes**
 
-## Project Structure
+## Architecture
 
+This application runs **entirely on Vercel** using Nuxt/Nitro server routes. No separate Express server needed.
+
+**Frontend**: Nuxt 3 + TailwindCSS + vanilla Chart.js  
+**API**: Nitro server routes (`server/api/`)  
+**Database**: Supabase (PostgreSQL)
+
+---
+
+## Quick Deploy to Vercel
+
+### 1. Prerequisites
+- GitHub account
+- Vercel account (sign up at vercel.com)
+- Supabase credentials
+
+### 2. Deploy from GitHub
+
+1. **Push to GitHub** (if not already):
+```bash
+git remote add origin https://github.com/yagmurrr083/yagmurkdsproje.git
+git push -u origin main
 ```
-YAGMURKDSPROJE/
-├── server/              # Backend (Express.js + Supabase)
-│   ├── controllers/
-│   ├── db/
-│   ├── routers/
-│   ├── app.js
-│   └── package.json
-├── pages/               # Frontend pages (Nuxt 3)
-│   └── index.vue       # Main dashboard
-├── assets/              # Styles
-│   └── css/main.css
-├── nuxt.config.ts       # Nuxt configuration
-├── tailwind.config.js   # TailwindCSS config
-└── package.json         # Frontend dependencies
-```
 
-## Quick Start
+2. **Import to Vercel**:
+   - Go to https://vercel.com
+   - Click "New Project"
+   - Import `yagmurrr083/yagmurkdsproje`
+   - Configure environment variables (see below)
+   - Click "Deploy"
 
-### 1. Backend Setup
+### 3. Environment Variables (on Vercel)
+
+In Vercel Project Settings → Environment Variables, add:
+
+| Variable | Value |
+|----------|-------|
+| `SUPABASE_URL` | `https://your-project.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Your Supabase service role key |
+
+**Important**: Use the **service role key**, not the anon key.
+
+---
+
+## Local Development
 
 ```bash
-cd server
-cp .env.example .env
-# Edit .env with your Supabase credentials
+# Install dependencies
 npm install
+
+# Create .env file with your Supabase credentials
+cp .env.example .env
+# Edit .env with your credentials
+
+# Run development server
 npm run dev
 ```
 
-Backend will run on `http://localhost:3001`
+App runs on `http://localhost:3000`
 
-### 2. Frontend Setup
+---
 
-```bash
-# From project root
-cp .env.example .env
-npm install
-npm run dev
-```
+## API Endpoint
 
-Frontend will run on `http://localhost:3000`
+**GET `/api/analiz`**
 
-## Environment Variables
-
-### Backend (`server/.env`)
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-PORT=3001
-```
-
-### Frontend (`.env`)
-```
-NUXT_PUBLIC_API_BASE=http://localhost:3001
-```
-
-## Features
-
-✅ **Single-page dashboard** (no navigation, no sidebar)  
-✅ **Exact legacy formulas** for all calculations  
-✅ **ML predictions** consumed as-is (no changes to ML logic)  
-✅ **TailwindCSS** styling (no Bootstrap)  
-✅ **Vanilla Chart.js** (no vue-chartjs wrapper)  
-✅ **Decision-grade reliability** (deterministic outputs)
-
-## Dashboard Components
-
-### Top Metric Cards
-1. **Tahmini Getiri (M)** - Estimated return from ML predictions
-2. **Kadın Girişimci Bütçesi (M)** - Calculated as `(ciro / 1,000,000) × 0.72`
-3. **Firma Seçiniz** - Firm selector dropdown
-
-### Charts
-1. **Sürdürülebilirlik Uyum Puanı (Top 7)** - Doughnut chart of top 7 firms
-2. **Atık Geri Dönüşüm Oranı (Top 10)** - Line chart with adjustable reference line
-3. **Girişimci Uyumluluk Analizi (Top 10)** - Bar chart with dynamic recalculation
-
-### Parameter-Driven Recalculation
-The entrepreneur compatibility chart recalculates scores based on three parameters:
-- **Kadın Çalışan Oranı**: 0-100% (default: 50%)
-- **Engelli Çalışan Oranı**: 0-100% (default: 30%)
-- **Kuruluş Yılı**: 2000-2025 (default: 2015)
-
-**Formula (exact legacy):**
-```javascript
-baseScore += (kadinDiff / 2);         // Weight: 0.5
-baseScore += (engelliDiff * 5);       // Weight: 5
-baseScore += (yilDiff / 2);           // Weight: 0.5
-score = Math.min(100, Math.max(0, Math.round(baseScore)));
-```
-
-## API Endpoints
-
-### GET `/api/analiz`
-Returns all dashboard data in a single request.
-
-**Response:**
+Returns all dashboard data:
 ```json
 {
   "firms": [...],
@@ -109,34 +78,85 @@ Returns all dashboard data in a single request.
     "recycling": [...],
     "entrepreneur": [...]
   },
-  "defaults": {
-    "kadinCalisan": 50,
-    "engelliCalisan": 30,
-    "kurulusYili": 2015,
-    "recyclingTarget": 50
-  }
+  "defaults": { ... }
 }
 ```
 
-## Technology Stack
+Implemented as: `server/api/analiz.get.ts` (Nitro route)
 
-**Backend:**
-- Node.js + Express.js
-- Supabase (PostgreSQL)
-- @supabase/supabase-js
+---
 
-**Frontend:**
-- Nuxt 3 (Vue 3)
-- TailwindCSS
-- Chart.js (vanilla)
+## Project Structure
 
-## Decision-Grade Requirements
+```
+├── server/
+│   └── api/
+│       └── analiz.get.ts      # Nitro API route (Vercel-native)
+├── pages/
+│   └── index.vue             # Dashboard page
+├── assets/
+│   └── css/main.css          # TailwindCSS
+├── nuxt.config.ts            # Nuxt configuration
+├── tailwind.config.js        # Tailwind configuration
+└── .env.example              # Environment template
+```
 
-✅ Mathematical correctness (exact legacy formulas)  
-✅ Data consistency (single source of truth)  
-✅ Deterministic behavior (same input → same output)  
-✅ Graph interpretability (correct scales, axes, units)  
-✅ UI stability (no duplicated charts, no memory leaks)
+**Note**: `_express_reference/` contains old Express code for reference only (not deployed).
+
+---
+
+## Key Features
+
+✅ Single-page dashboard  
+✅ Vercel-native (no localhost dependencies)  
+✅ Same-origin API calls (`/api/analiz`)  
+✅ Exact legacy formulas preserved  
+✅ ML pipeline included (for reference)  
+✅ Zero security vulnerabilities  
+
+---
+
+## Formulas (Decision-Grade)
+
+### Kadın Girişimci Bütçesi
+```javascript
+budgetInMillions = (ciro / 1,000,000) × 0.72
+```
+
+### Entrepreneur Score Recalculation
+```javascript
+baseScore += (kadinDiff / 2)        // Weight: 0.5
+baseScore += (engelliDiff × 5)      // Weight: 5
+baseScore += (yilDiff / 2)          // Weight: 0.5
+score = clamp(round(baseScore), 0, 100)
+```
+
+---
+
+## Troubleshooting
+
+### Build Fails on Vercel
+- Check environment variables are set correctly
+- Ensure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are present
+
+### API Returns 500 Error
+- Verify Supabase credentials in Vercel environment variables
+- Check Supabase tables exist: `firmalar`, `girisimciler`, `firma_tahminleme`, `girisimci_tahminleme`
+
+### Charts Not Displaying
+- Check browser console for errors
+- Verify `/api/analiz` returns data successfully
+
+---
+
+## Support
+
+For issues, check:
+1. Vercel deployment logs
+2. Browser console (F12)
+3. `/api/analiz` endpoint response
+
+---
 
 ## License
 

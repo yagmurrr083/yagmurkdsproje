@@ -10,8 +10,9 @@
         "postinstall": "nuxt prepare"
     },
     "dependencies": {
-        "nuxt": "^3.14.1592",
-        "chart.js": "^4.4.1"
+        "@supabase/supabase-js": "^2.89.0",
+        "chart.js": "^4.4.1",
+        "nuxt": "^3.14.1592"
     },
     "devDependencies": {
         "@nuxtjs/tailwindcss": "^6.12.0"
