@@ -32,7 +32,7 @@
           <div class="card card-body">
             <h6 class="text-sm font-semibold text-gray-500 uppercase mb-2">Kadın Girişimci Bütçesi (M)</h6>
             <div class="flex items-center justify-between">
-              <h2 class="text-3xl font-bold text-success">{{ formatCurrency(kadinGirisimciBut cesi) }}</h2>
+              <h2 class="text-3xl font-bold text-success">{{ formatCurrency(kadinGirisimciButcesi) }}</h2>
               <div class="text-4xl text-success opacity-25">💰</div>
             </div>
           </div>
@@ -230,7 +230,7 @@ const showEntrepreneurControls = ref(true);
 const selectedFirmId = ref('');
 const selectedFirmName = ref('Firma Seçiniz');
 const tahminiGetiri = ref(0);
-const kadinGirisimciBut cesi = ref(0);
+const kadinGirisimciButcesi = ref(0);
 
 // Parameters (defaults from backend)
 const params = ref({
@@ -285,7 +285,7 @@ function updateFirmMetrics() {
   const rawCiro = selectedFirm.ciro ? String(selectedFirm.ciro).replace(/,/g, '.') : '0';
   const ciroFull = parseFloat(rawCiro);
   const ciroInMillions = !isNaN(ciroFull) ? (ciroFull / 1000000) : 0;
-  kadinGirisimciBut cesi.value = ciroInMillions * 0.72;
+  kadinGirisimciButcesi.value = ciroInMillions * 0.72;
   
   selectedFirmName.value = selectedFirm.ad;
 }

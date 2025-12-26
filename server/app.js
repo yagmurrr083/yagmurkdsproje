@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+// Import middlewares (teacher skeleton pattern)
+const logger = require('./middlewares/logger');
+const errorHandler = require('./middlewares/errorHandler');
+
 const app = express();
 const port = process.env.PORT || 3001;
 
@@ -9,6 +13,7 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(logger); // Request logging
 
 // Routes
 const router = require('./routers');
@@ -19,11 +24,8 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'KDS Backend is running' });
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!', message: err.message });
-});
+// Error handling middleware (must be last)
+app.use(errorHandler);
 
 // Start server
 app.listen(port, () => {
