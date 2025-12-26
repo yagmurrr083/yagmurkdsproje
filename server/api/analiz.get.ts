@@ -1,125 +1,215 @@
-// Nitro API route for Vercel deployment - /api/analiz endpoint
-import { defineEventHandler, createError, setResponseStatus } from 'h3';
+// Production-grade Nitro API route for Vercel deployment
+// /api/analiz endpoint with comprehensive error handling
+import { defineEventHandler, setResponseStatus } from 'h3';
 import type { H3Event } from 'h3';
 import { createClient } from '@supabase/supabase-js';
 
+// Generate trace ID for debugging
+function generateTraceId(): string {
+    return `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 export default defineEventHandler(async (event: H3Event) => {
+    const traceId = generateTraceId();
+
     try {
-        // Initialize Supabase client from environment variables
+        // ========================================
+        // STEP 1: ENV VALIDATION
+        // ========================================
         const supabaseUrl = process.env.SUPABASE_URL;
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
         if (!supabaseUrl || !supabaseKey) {
-            setResponseStatus(event, 500);
+            console.error(`[${traceId}] Missing environment variables`);
+            setResponseStatus(event, 503);
             return {
-                error: 'Missing Supabase credentials',
-                details: 'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables'
+                error: 'MISSING_ENV',
+                missing: [
+                    ...(!supabaseUrl ? ['SUPABASE_URL'] : []),
+                    ...(!supabaseKey ? ['SUPABASE_SERVICE_ROLE_KEY'] : [])
+                ],
+                hint: 'Set these environment variables in Vercel Project Settings → Environment Variables',
+                traceId
             };
         }
 
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        // --- 1. FIRMS WITH ESTIMATED RETURN (exact legacy query) ---
-        const { data: firmsData, error: firmsError } = await supabase
-            .from('firmalar')
-            .select(`
-        id,
-        ad,
-        ciro,
-        firma_tahminleme!inner(tahmini_getiri)
-      `)
-            .not('firma_tahminleme.tahmini_getiri', 'is', null)
-            .order('firma_tahminleme.tahmini_getiri', { ascending: false });
-
-        if (firmsError) {
-            console.error('Firms query error:', firmsError);
-            setResponseStatus(event, 500);
+        // ========================================
+        // STEP 2: INITIALIZE SUPABASE CLIENT
+        // ========================================
+        let supabase;
+        try {
+            supabase = createClient(supabaseUrl, supabaseKey);
+        } catch (error: any) {
+            console.error(`[${traceId}] Step 2 failed - Supabase client init:`, error);
+            setResponseStatus(event, 503);
             return {
-                error: 'Database query failed',
-                details: firmsError.message
+                error: 'SUPABASE_INIT_FAILED',
+                step: 'initialize_client',
+                reason: error.message,
+                hint: 'Check if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are valid',
+                traceId
             };
         }
 
-        const firms = firmsData.map(f => ({
-            id: f.id,
-            ad: f.ad,
-            ciro: f.ciro,
-            tahmini_getiri: f.firma_tahminleme[0]?.tahmini_getiri || null
-        }));
+        // ========================================
+        // STEP 3: FETCH FIRMS WITH ESTIMATED RETURN
+        // ========================================
+        let firms;
+        try {
+            // Fixed query: Use RPC or fetch separately instead of ordering by nested field
+            const { data: firmsRaw, error: firmsError } = await supabase
+                .from('firmalar')
+                .select('id, ad, ciro')
+                .order('id', { ascending: true });
 
-        // --- 2. TOP 7 SUSTAINABILITY SCORES (exact legacy query) ---
-        const { data: sustainabilityData, error: sustainabilityError } = await supabase
-            .from('firmalar')
-            .select(`
-        ad,
-        firma_tahminleme!inner(surdurulebilirlik_uyum_puani)
-      `)
-            .order('firma_tahminleme.surdurulebilirlik_uyum_puani', { ascending: false })
-            .limit(7);
+            if (firmsError) throw firmsError;
 
-        if (sustainabilityError) {
-            console.error('Sustainability query error:', sustainabilityError);
-            setResponseStatus(event, 500);
+            // Fetch predictions separately
+            const { data: predictions, error: predError } = await supabase
+                .from('firma_tahminleme')
+                .select('firma_id, tahmini_getiri')
+                .not('tahmini_getiri', 'is', null)
+                .order('tahmini_getiri', { ascending: false });
+
+            if (predError) throw predError;
+
+            // Join in memory
+            const firmMap = new Map(firmsRaw.map(f => [f.id, f]));
+            firms = (predictions || [])
+                .map(p => {
+                    const firm = firmMap.get(p.firma_id);
+                    return firm ? {
+                        id: firm.id,
+                        ad: firm.ad,
+                        ciro: firm.ciro,
+                        tahmini_getiri: p.tahmini_getiri
+                    } : null;
+                })
+                .filter(Boolean);
+
+        } catch (error: any) {
+            console.error(`[${traceId}] Step 3 failed - Firms query:`, error);
+            setResponseStatus(event, 502);
             return {
-                error: 'Database query failed',
-                details: sustainabilityError.message
+                error: 'DB_QUERY_FAILED',
+                step: 'fetch_firms',
+                reason: error.message || 'Unknown database error',
+                hint: 'Check if tables "firmalar" and "firma_tahminleme" exist with correct columns',
+                traceId
             };
         }
 
-        const sustainability = sustainabilityData.map(s => ({
-            ad: s.ad,
-            surdurulebilirlik_uyum_puani: s.firma_tahminleme[0]?.surdurulebilirlik_uyum_puani || 0
-        }));
+        // ========================================
+        // STEP 4: FETCH CHART DATASETS
+        // ========================================
+        let sustainability, recycling, entrepreneur;
 
-        // --- 3. TOP 10 RECYCLING RATES (exact legacy query) ---
-        const { data: recyclingData, error: recyclingError } = await supabase
-            .from('firmalar')
-            .select('ad, geri_donusum_orani')
-            .order('geri_donusum_orani', { ascending: false })
-            .limit(10);
+        try {
+            // 4a: Top 7 Sustainability Scores
+            const { data: sustRaw, error: sustError } = await supabase
+                .from('firmalar')
+                .select('id, ad')
+                .order('id', { ascending: true });
 
-        if (recyclingError) {
-            console.error('Recycling query error:', recyclingError);
-            setResponseStatus(event, 500);
+            if (sustError) throw sustError;
+
+            const { data: sustScores, error: sustScoresError } = await supabase
+                .from('firma_tahminleme')
+                .select('firma_id, surdurulebilirlik_uyum_puani')
+                .not('surdurulebilirlik_uyum_puani', 'is', null)
+                .order('surdurulebilirlik_uyum_puani', { ascending: false })
+                .limit(7);
+
+            if (sustScoresError) throw sustScoresError;
+
+            const sustMap = new Map(sustRaw.map(f => [f.id, f.ad]));
+            sustainability = (sustScores || []).map(s => ({
+                ad: sustMap.get(s.firma_id) || 'Unknown',
+                surdurulebilirlik_uyum_puani: s.surdurulebilirlik_uyum_puani
+            }));
+
+        } catch (error: any) {
+            console.error(`[${traceId}] Step 4a failed - Sustainability query:`, error);
+            setResponseStatus(event, 502);
             return {
-                error: 'Database query failed',
-                details: recyclingError.message
+                error: 'DB_QUERY_FAILED',
+                step: 'fetch_sustainability',
+                reason: error.message,
+                hint: 'Check if table "firma_tahminleme" has column "surdurulebilirlik_uyum_puani"',
+                traceId
             };
         }
 
-        const recycling = recyclingData || [];
+        try {
+            // 4b: Top 10 Recycling Rates
+            const { data: recyclingData, error: recyclingError } = await supabase
+                .from('firmalar')
+                .select('ad, geri_donusum_orani')
+                .not('geri_donusum_orani', 'is', null)
+                .order('geri_donusum_orani', { ascending: false })
+                .limit(10);
 
-        // --- 4. TOP 10 ENTREPRENEUR COMPATIBILITY (exact legacy query) ---
-        const { data: entrepreneurData, error: entrepreneurError } = await supabase
-            .from('girisimciler')
-            .select(`
-        isletme_adi,
-        kadin_calisan_orani,
-        engelli_calisan_orani,
-        kurulus_yili,
-        girisimci_tahminleme!inner(kriter_uyumluluk_puani)
-      `)
-            .order('girisimci_tahminleme.kriter_uyumluluk_puani', { ascending: false })
-            .limit(10);
+            if (recyclingError) throw recyclingError;
 
-        if (entrepreneurError) {
-            console.error('Entrepreneur query error:', entrepreneurError);
-            setResponseStatus(event, 500);
+            recycling = recyclingData || [];
+
+        } catch (error: any) {
+            console.error(`[${traceId}] Step 4b failed - Recycling query:`, error);
+            setResponseStatus(event, 502);
             return {
-                error: 'Database query failed',
-                details: entrepreneurError.message
+                error: 'DB_QUERY_FAILED',
+                step: 'fetch_recycling',
+                reason: error.message,
+                hint: 'Check if table "firmalar" has column "geri_donusum_orani"',
+                traceId
             };
         }
 
-        const entrepreneur = entrepreneurData.map(e => ({
-            isletme_adi: e.isletme_adi,
-            kriter_uyumluluk_puani: e.girisimci_tahminleme[0]?.kriter_uyumluluk_puani || 0,
-            kadin_calisan_orani: e.kadin_calisan_orani,
-            engelli_calisan_orani: e.engelli_calisan_orani,
-            kurulus_yili: e.kurulus_yili
-        }));
+        try {
+            // 4c: Top 10 Entrepreneur Compatibility
+            const { data: entrRaw, error: entrError } = await supabase
+                .from('girisimciler')
+                .select('id, isletme_adi, kadin_calisan_orani, engelli_calisan_orani, kurulus_yili')
+                .order('id', { ascending: true });
 
-        // --- 5. DEFAULT PARAMETERS (exact legacy values) ---
+            if (entrError) throw entrError;
+
+            const { data: entrScores, error: entrScoresError } = await supabase
+                .from('girisimci_tahminleme')
+                .select('girisimci_id, kriter_uyumluluk_puani')
+                .not('kriter_uyumluluk_puani', 'is', null)
+                .order('kriter_uyumluluk_puani', { ascending: false })
+                .limit(10);
+
+            if (entrScoresError) throw entrScoresError;
+
+            const entrMap = new Map(entrRaw.map(e => [e.id, e]));
+            entrepreneur = (entrScores || []).map(s => {
+                const entr = entrMap.get(s.girisimci_id);
+                return entr ? {
+                    isletme_adi: entr.isletme_adi,
+                    kriter_uyumluluk_puani: s.kriter_uyumluluk_puani,
+                    kadin_calisan_orani: entr.kadin_calisan_orani,
+                    engelli_calisan_orani: entr.engelli_calisan_orani,
+                    kurulus_yili: entr.kurulus_yili
+                } : null;
+            }).filter(Boolean);
+
+        } catch (error: any) {
+            console.error(`[${traceId}] Step 4c failed - Entrepreneur query:`, error);
+            setResponseStatus(event, 502);
+            return {
+                error: 'DB_QUERY_FAILED',
+                step: 'fetch_entrepreneur',
+                reason: error.message,
+                hint: 'Check if tables "girisimciler" and "girisimci_tahminleme" exist with correct columns',
+                traceId
+            };
+        }
+
+        // ========================================
+        // STEP 5: COMPUTE DEFAULT PARAMETERS
+        // ========================================
         const defaults = {
             kadinCalisan: 50,
             engelliCalisan: 30,
@@ -127,7 +217,11 @@ export default defineEventHandler(async (event: H3Event) => {
             recyclingTarget: 50
         };
 
-        // Return success response
+        // ========================================
+        // STEP 6: RETURN SUCCESS RESPONSE
+        // ========================================
+        console.log(`[${traceId}] Success - returning ${firms.length} firms, ${sustainability.length} sustainability, ${recycling.length} recycling, ${entrepreneur.length} entrepreneur`);
+
         setResponseStatus(event, 200);
         return {
             firms,
@@ -136,15 +230,26 @@ export default defineEventHandler(async (event: H3Event) => {
                 recycling,
                 entrepreneur
             },
-            defaults
+            defaults,
+            _meta: {
+                traceId,
+                timestamp: new Date().toISOString()
+            }
         };
 
     } catch (error: any) {
-        console.error('Error in /api/analiz:', error);
+        // ========================================
+        // GLOBAL ERROR HANDLER
+        // ========================================
+        console.error(`[${traceId}] Unexpected error in /api/analiz:`, error.stack || error);
         setResponseStatus(event, 500);
         return {
-            error: 'Internal server error',
-            details: error.message || 'Unknown error occurred'
+            error: 'ANALIZ_API_FAILED',
+            reason: 'Unexpected server error',
+            hint: 'Check server logs for details',
+            traceId,
+            // Only include stack in development
+            ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
         };
     }
 });
